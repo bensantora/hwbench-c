@@ -1,90 +1,102 @@
 # hwbench — Hardware Benchmark
 
-**A tool that tells you how fast your computer really is.**
+A command-line tool that measures what your Linux machine can actually do.
+No installation, no dependencies, no root required. Drop the binary, run it, get answers.
 
-## What's this tool do?
+## What It Measures
 
-Imagine you have a super-fast race car but you've never timed it on a track. You know it's fast, but how fast exactly?
+**CPU Throughput**
+How fast the processor executes a serial chain of arithmetic — integer and floating point.
+Because each operation depends on the result of the previous one, the CPU can't cheat by
+running multiple operations at once. The number reflects real throughput per core.
 
-**hwbench** is like a stopwatch for your computer. It tests three things:
+**Memory Bandwidth**
+How fast data moves between the processor and RAM. Two write paths are measured:
 
-1. **How fast is your CPU?** (the brain)
-2. **How fast can your computer move data around?** (the memory)
-3. **How quick is each level of memory?** (the brain's notepads)
+- *Cached write* — the normal path. Before writing a memory location, the CPU fetches
+  the existing data first (a "Read-For-Ownership"). This hidden read costs bandwidth.
+- *Non-temporal write* — the fast path. Bypasses the cache entirely, streams directly
+  to RAM. No hidden read. This is the true write bandwidth of the hardware.
+- *Sequential read* — how fast the CPU can read a large block of data from RAM.
 
-You run it, it measures, and it tells you real numbers. No guessing.
+**Cache Latency**
+How long it takes to fetch a single piece of data from each level of the memory hierarchy.
+Modern CPUs have small, fast caches close to the processor (L1, L2, L3) and slower main
+RAM further away. The latency jumps between levels tell you exactly where the speed cliff is.
 
-## Why should I care?
+The test uses a random access pattern specifically designed to defeat the CPU's prefetcher —
+the hardware mechanism that tries to predict what data you'll need next. Without that
+defeat, you'd be measuring the prefetcher, not the cache. A short warmup pass runs before
+timing begins to ensure the benchmark itself is not skewing the first result.
 
-Knowing your computer's real speed is useful because:
-
-- **Compare computers** — Is your home computer faster than the school laptop? Now you know for sure!
-- **See what matters** — The tool shows why having more RAM or a faster CPU makes things quicker
-- **Learn by doing** — Compiling and running this program teaches you real Linux commands
-- **Debug slow computers** — If something feels slow, the numbers tell you if it's the CPU, memory, or something else
-
-## What do the numbers mean?
-
-Here's the simple version:
-
-| Test | What it means | Good number |
-|------|---------------|-------------|
-| CPU Integer | How fast the brain does math | 500–4000 MOPS |
-| CPU Float | How fast the brain does decimal math | 300–3000 MOPS |
-| Memory Write | How fast data goes to RAM | 15–50 GB/s |
-| Memory Read | How fast data comes from RAM | 15–50 GB/s |
-| L1 Cache | Super-fast mini-memory | 1–2 nanoseconds |
-| L2 Cache | Fast mini-memory | 3–6 nanoseconds |
-| L3 Cache | Slower mini-memory | 8–20 nanoseconds |
-| RAM | The main memory | 60–120 nanoseconds |
-
-**Lower is better for time. Higher is better for speed.**
-
-## How do I use it?
-
-First, compile it (turn the code into a program):
+## Building
 
 ```bash
 gcc -O2 -msse2 -o hwbench hwbench.c
 ```
 
-Then run it:
+Requires: gcc, standard C library, Linux. Nothing else.
+
+## Running
 
 ```bash
 ./hwbench
 ```
 
-Wait about 10–30 seconds. It'll print results as it runs each test.
+Takes 10–30 seconds depending on hardware. Results print as each test completes —
+if it appears to hang at the start, the CPU integer test is running (it's the longest).
 
-## What's really happening? (The cool part)
+## Reading the Output
 
-### CPU Test
-The tool makes your CPU do math problems one after another — not at the same time. Why? Because this way it can't "cheat" by doing multiple things at once. What you get is the real, honest speed.
+```
+CPU
+  Integer throughput    :   2400 MOPS
+  Float throughput      :   1200 MOPS
+```
+MOPS = millions of operations per second. Higher is better.
 
-### Memory Test
-Your computer has two ways to write data:
-- **Normal way** — It first checks if the memory spot is "owned," then writes. Like checking if a desk is taken before putting your paper down.
-- **Fast way** — Just writes directly. Like dropping your paper on an empty desk without checking.
+```
+Memory Bandwidth
+  Write (cached/RFO)    :   20.1 GB/s
+  Write (non-temporal)  :   23.2 GB/s
+  Sequential read       :   16.2 GB/s
+```
+GB/s = gigabytes per second. The gap between cached and non-temporal write is
+the cost of the hidden Read-For-Ownership on every cache-missing store.
 
-The difference between those two numbers shows how much "checking" costs.
+```
+Cache Latency
+  16 KB   (L1)          :    1.2 ns
+  256 KB  (L2)          :    2.8 ns
+  4 MB    (L3)          :   10.7 ns
+  256 MB  (RAM)         :   98.6 ns
+```
+ns = nanoseconds per memory access. Lower is better. The jump from L3 to RAM
+is where most performance-sensitive software tries not to go.
 
-### Cache Test
-Your CPU has tiny super-fast memory spots called "cache" (L1, L2, L3) and then the bigger, slower RAM. The tool tests each one by jumping around randomly, so the CPU can't guess what's next (that would be cheating!).
+## What Normal Looks Like
 
-The numbers show the "speed cliff" — where going from fast memory to slow memory costs a LOT of time.
+On a modern desktop or laptop CPU:
 
-## Why was this written in C?
+| Measurement            | Typical range       |
+|------------------------|---------------------|
+| Integer throughput     | 500 – 4000 MOPS     |
+| Float throughput       | 300 – 3000 MOPS     |
+| Write (non-temporal)   | 15 – 50 GB/s        |
+| Sequential read        | 15 – 50 GB/s        |
+| L1 latency             | 1 – 2 ns            |
+| L2 latency             | 3 – 6 ns            |
+| L3 latency             | 8 – 20 ns           |
+| RAM latency            | 60 – 120 ns         |
 
-C is a programming language that lets you control the computer very precisely. The memory tests need special instructions that only C can use directly. It's like the difference between driving an automatic car vs. driving a stick shift — C gives you total control.
+Numbers outside these ranges aren't necessarily wrong — older hardware, single-channel
+memory, or a thermally throttled laptop will land lower. The value is in running it
+on multiple machines and comparing.
 
-## Cool facts
+## Why C
 
-- Runs in about 10–30 seconds
-- No administrator/sudo needed
-- Works on any Linux computer
-- No extra libraries to install
-- The binary is tiny (about 16KB!)
-
----
-
-**Have fun! Run it on different computers and compare the numbers.** That's how you learn what makes a computer fast or slow.
+The write bandwidth test requires non-temporal store instructions (MOVNTDQ) to bypass
+the cache and measure true memory throughput. The cache latency test requires a serial
+dependent-load chain that the CPU cannot speculatively execute around. Both techniques
+demand direct control over what the compiler and hardware actually do. C provides that
+control. A higher-level language cannot make the same guarantees.
